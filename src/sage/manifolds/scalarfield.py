@@ -1111,6 +1111,7 @@ class ScalarField(CommutativeAlgebraElement, ModuleElementWithMutability):
     """
 
     _name: Optional[str]
+    _abstract_sym_counter = 0
 
     def __init__(self, parent, coord_expression=None, chart=None, name=None,
                  latex_name=None):
@@ -1745,9 +1746,83 @@ class ScalarField(CommutativeAlgebraElement, ModuleElementWithMutability):
             sage: f.coord_function(o2)
             -T^2 + X^2
         """
+        from sage.symbolic.ring import SR
+        from sage.misc.latex import latex
+
+        # Define the duck-typed Mock container for coordinate-free execution
+        class AbstractFrameFunction:
+            _tensor_type = (0, 0) 
+
+            def __init__(self, expr, name=None):
+                self._expr = expr
+                self._name = name if name else str(expr)
+                self._latex_name = self._name #TODO
+            def expr(self):
+                return self._expr
+            def display(self):
+                return self._expr
+            def _repr_(self):
+                return repr(self._expr)
+            def __str__(self): 
+                return str(self._expr)
+                
+            def _latex_(self):
+                return latex(self._expr)
+            def diff(self, direction=None, *args):
+                
+                # Determine the vector field's name for the prefix
+                if direction is not None and hasattr(direction, '_name') and direction._name:
+                    v_name = direction._name
+                    v_latex = getattr(direction, '_latex_name', v_name) or v_name
+                else:
+                    v_name = "D"
+                    v_latex = "D"
+                    
+                # Ensure the expression is safely in the Symbolic Ring
+                expr = SR(self._expr)
+                result = SR(0)
+                
+                # Apply the multi-variable chain rule
+                for v in expr.variables():
+                    # Evaluate the partial derivative using Sage's internal calculus engine
+                    p_diff = expr.diff(v)
+                    
+                    if p_diff != 0:
+                        # Generate the formal symbol for the directional derivative of the base variable
+                        sym_name = f"{v_name}_{v}"
+                        sym_name = sym_name.replace("(", "_").replace(")", "").replace("^", "")
+                        l_name = fr"{v_latex}\left({latex(v)}\right)"
+                        # Instantiate the formal derivative as a new symbolic variable
+                        X_v = SR.var(sym_name)
+                        
+                        # Add the chain rule term: (dF/dv) * X(v)
+                        result += p_diff * X_v
+                        
+                return AbstractFrameFunction(result, name=str(result))
+            def __add__(self, other):
+                return AbstractFrameFunction(self._expr + getattr(other, '_expr', other))
+            def __radd__(self, other):
+                return AbstractFrameFunction(getattr(other, '_expr', other) + self._expr)
+            def __sub__(self, other):
+                return AbstractFrameFunction(self._expr - getattr(other, '_expr', other))
+            def __rsub__(self, other):
+                return AbstractFrameFunction(getattr(other, '_expr', other) - self._expr)
+            def __mul__(self, other):
+                return AbstractFrameFunction(self._expr * getattr(other, '_expr', other))
+            def __rmul__(self, other):
+                return AbstractFrameFunction(getattr(other, '_expr', other) * self._expr)
+            def __neg__(self):
+                return AbstractFrameFunction(-self._expr)   
         if chart is None:
             chart = self._domain._def_chart
         else:
+            if not self._domain._atlas:
+                if not hasattr(self, '_abstract_expr'):
+                    ScalarField._abstract_sym_counter += 1
+                    name = f"s_{ScalarField._abstract_sym_counter}"
+                    l_name = fr"s_{{{ScalarField._abstract_sym_counter}}}"
+                    self._abstract_expr = SR.var(name, latex_name=l_name)
+                return AbstractFrameFunction(self._abstract_expr)
             if chart not in self._domain._atlas:
                 raise ValueError("the {} is not a chart ".format(chart) +
                                  "defined on the {}".format(self._domain))
@@ -1779,8 +1854,12 @@ class ScalarField(CommutativeAlgebraElement, ModuleElementWithMutability):
                     if found:
                         break
                 if not found:
-                    raise ValueError("no starting chart could be found to " +
-                                     "compute the expression in the {}".format(chart))
+                    if not hasattr(self, '_abstract_expr'):
+                        ScalarField._abstract_sym_counter += 1 #TODO add in handling existing names
+                        name = f"s_{ScalarField._abstract_sym_counter}"
+                        l_name = fr"s_{{{ScalarField._abstract_sym_counter}}}"
+                        self._abstract_expr = SR.var(name, latex_name=l_name)
+                    return AbstractFrameFunction(self._abstract_expr)           
             change = self._domain._coord_changes[(chart, from_chart)]
             # old coordinates expressed in terms of the new ones:
             coords = [change._transf._functions[i].expr()
@@ -1905,7 +1984,10 @@ class ScalarField(CommutativeAlgebraElement, ModuleElementWithMutability):
         if chart is None:
             chart = self._domain._def_chart
         self._express.clear()
-        self._express[chart] = chart.function(coord_expression)
+        if chart is None:
+            self._express[None] = coord_expression
+        else:
+            self._express[chart] = chart.function(coord_expression)
         self._is_zero = False  # a priori
         self._del_derived()
 
@@ -1967,7 +2049,11 @@ class ScalarField(CommutativeAlgebraElement, ModuleElementWithMutability):
                              "cannot be changed")
         if chart is None:
             chart = self._domain._def_chart
-        self._express[chart] = chart.function(coord_expression)
+
+        if chart is None:
+            self._abstract_expr = coord_expression
+        else:
+            self._express[chart] = chart.function(coord_expression)
         self._is_zero = False  # a priori
         self._del_derived()
 

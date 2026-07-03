@@ -1445,7 +1445,7 @@ class DiffFormParal(FreeModuleAltForm, TensorFieldParal, DiffForm):
 
             sage: N = Manifold(3, 'N', start_index=1)
             sage: X.<x,y,z> = N.chart()
-            sage: change_basis = M.automorphism_field()
+            sage: change_basis = N.automorphism_field()
             sage: change_basis[X.frame(), :] = [[1, 0, 0], [0, 1, 0], [0, x, 1]]
             sage: e = X.frame().new_frame(change_basis, 'e')
             sage: omega = N.diff_form(1, 'omega')

@@ -340,6 +340,40 @@ class VectorField(MultivectorField):
             return scalar(self)
         if scalar._tensor_type != (0,0):
             raise TypeError("the argument must be a scalar field")
+        
+        # AbstractFrameFunction calculation
+        if not hasattr(scalar, 'differential'):
+            return scalar.diff(self)
+        # AbstractFrameFunction calculation
+        if hasattr(scalar, '_express') and (not scalar._express or None in scalar._express):
+            from sage.symbolic.ring import SR
+            from sage.misc.latex import latex
+            
+            # Extract raw expression natively via our updated scalar.expr()
+            expr_val = scalar.expr()
+            expr = SR(expr_val)
+            
+            if expr == 0:
+                resu = scalar._domain.manifold().scalar_field()
+                resu._express[None] = SR(0)
+                return resu
+                
+            v_name = getattr(self, '_name', 'D') or 'D'
+            v_latex = getattr(self, '_latex_name', v_name) or v_name
+            
+            result_expr = SR(0)
+            for v in expr.variables():
+                p_diff = expr.diff(v)
+                if p_diff != 0:
+                    sym_name = f"{v_name}_{v}".replace("(", "_").replace(")", "").replace("^", "")
+                    l_name = fr"{v_latex}\left({latex(v)}\right)"
+                    result_expr += p_diff * SR.var(sym_name, latex_name=l_name)
+                    
+            # Wrap the resulting symbolic math back into a clean, native ScalarField
+            resu = scalar._domain.manifold().scalar_field()
+            resu._express[None] = result_expr
+            return resu
+        
         resu = scalar.differential()(self)
         if not resu.is_immutable():
             if self._name is not None and scalar._name is not None:

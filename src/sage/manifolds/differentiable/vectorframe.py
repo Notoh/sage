@@ -1220,6 +1220,7 @@ class VectorFrame(FreeModuleBasis):
             -cos(th)/(r*sin(th))
         """
         from sage.tensor.modules.comp import CompWithSym
+        from sage.symbolic.ring import SR
 
         fmodule = self._fmodule
         structure_coeff = CompWithSym(self._fmodule._ring, self, 3,
@@ -1234,7 +1235,13 @@ class VectorFrame(FreeModuleBasis):
                 e_i = self._vec[i-si]
                 for j in range(i+1, nsi):
                     e_j = self._vec[j-si]
-                    structure_coeff[[k,i,j]] = ce_k(e_j.lie_der(e_i))
+                    try:
+                        # Attempt Lie derivative calculation in coordinates
+                        structure_coeff[[k,i,j]] = ce_k(e_j.lie_der(e_i))
+                    except (ValueError, AttributeError):
+                            sym_name = f"c_{k}{i}{j}"
+                            l_name = fr"c^{{{k}}}_{{{i}{j}}}"                        
+                            structure_coeff[[k,i,j]] = SR.var(sym_name, latex_name=l_name)
         return structure_coeff
 
     def along(self, mapping):

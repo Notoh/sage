@@ -479,70 +479,142 @@ class LeviCivitaConnection(AffineConnection):
             else:
                 # If not, the coefficients must be computed from scratch:
                 manif = self._domain
-                if isinstance(frame, CoordFrame):
-                    # Christoffel symbols
-                    chart = frame._chart
-                    gam = self._new_coef(frame)
-                    gg = self._metric.comp(frame)
-                    ginv = self._metric.inverse().comp(frame)
+                gam = self._new_coef(frame)
+                
+                gg = self._metric.comp(frame)
+                ginv = self._metric.inverse().comp(frame)
+                
+                is_coord = isinstance(frame, CoordFrame)
+                
+                if not is_coord:
+                    c = frame.structure_coeff()
+                    # Pre-fetch the metric components properly wrapped as ScalarFields
+                    # The library is dumb here and doesn't let you differentiate a ChartFunction with a VectorField,
+                    # so because of this, when we differentiate things in our definition of Christoffel symbols, we have to split casewise.
+                    # TODO Maybe a better thing is change __call__ of VectorField to handle ChartFunction by assuming the charts match or something
+                    g_sf = {} 
+                    for uu in manif.irange():
+                        for vv in manif.irange():
+                            g_sf[(uu, vv)] = self._metric[frame, uu, vv]
 
-                    if Parallelism().get('tensor') != 1:
-                        # parallel computation
-                        nproc = Parallelism().get('tensor')
-                        lol = lambda lst, sz: [lst[i:i+sz] for i in
-                                                        range(0, len(lst), sz)]
+                # Helper to safely extract raw symbolic expressions for algebra
+                def get_expr(obj):
+                    return obj.expr() if hasattr(obj, 'expr') else obj
 
-                        ind_list = []
-                        for ind in gam.non_redundant_index_generator():
-                            i, j, k = ind
-                            ind_list.append((i,j,k))
-                        ind_step = max(1,int(len(ind_list)/nproc/2))
-                        local_list = lol(ind_list,ind_step)
+                if Parallelism().get('tensor') != 1:
+                    # Parallel computation engine
+                    nproc = Parallelism().get('tensor')
+                    lol = lambda lst, sz: [lst[i:i+sz] for i in range(0, len(lst), sz)]
 
-                        # definition of the list of input parameters
-                        listParalInput = []
-                        for ind_part in local_list:
-                            listParalInput.append((ind_part,chart,ginv,gg,manif))
+                    ind_list = [ind for ind in gam.non_redundant_index_generator()]
+                    ind_step = max(1, int(len(ind_list) / nproc / 2))
+                    local_list = lol(ind_list, ind_step)
 
-                        # definition of the parallel function
-                        @parallel(p_iter='multiprocessing',ncpus=nproc)
-                        def make_Connect(local_list_ijk, chart, ginv, gg, manif):
+                    if is_coord:
+                        chart = frame._chart
+                        listParalInput = [(ind_part, chart, ginv, gg, manif) for ind_part in local_list]
+
+                        @parallel(p_iter='multiprocessing', ncpus=nproc)
+                        def make_Connect_Coord(local_list_ijk, chart, ginv, gg, manif):
                             partial = []
-                            for i,j,k in local_list_ijk:
+                            for i, j, k in local_list_ijk:
                                 rsum = 0
                                 for s in manif.irange():
-                                    if ginv[i,s, chart] != 0:
-                                        rsum += ginv[i,s, chart] * (
-                                                        gg[s,k, chart].diff(j)
-                                                      + gg[j,s, chart].diff(k)
-                                                      - gg[j,k, chart].diff(s) )
-                                partial.append([i,j,k,rsum / 2])
+                                    if ginv[i, s, chart] != 0:
+                                        rsum += ginv[i, s, chart] * (
+                                            gg[s, k, chart].diff(j) + 
+                                            gg[j, s, chart].diff(k) - 
+                                            gg[j, k, chart].diff(s)
+                                        )
+                                partial.append([i, j, k, rsum / 2])
                             return partial
 
-                        # Computation and Assignation of values
-                        for ii, val in make_Connect(listParalInput):
+                        for ii, val in make_Connect_Coord(listParalInput):
                             for jj in val:
-                                gam[jj[0],jj[1],jj[2],ii[0][1]] = jj[3]
+                                gam[jj[0], jj[1], jj[2], ii[0][1]] = jj[3]
 
                     else:
-                        # sequential
-                        for ind in gam.non_redundant_index_generator():
-                            i, j, k = ind
-                            # The computation is performed at the ChartFunction level:
-                            rsum = 0
-                            for s in manif.irange():
-                                rsum += ginv[i,s, chart] * (
-                                                    gg[s,k, chart].diff(j)
-                                                  + gg[j,s, chart].diff(k)
-                                                  - gg[j,k, chart].diff(s) )
-                            gam[i,j,k, chart] = rsum / 2
+                        listParalInput = [(ind_part, frame, ginv, gg, c, g_sf, manif) for ind_part in local_list]
 
-                    # Assignation of results
-                    self._coefficients[frame] = gam
+                        @parallel(p_iter='multiprocessing', ncpus=nproc)
+                        def make_Connect_Frame(local_list_ijk, frame, ginv, gg, c, g_sf, manif):
+                            def p_get_expr(obj):
+                                return obj.expr() if hasattr(obj, 'expr') else obj
+                                
+                            partial = []
+                            for i, j, k in local_list_ijk:
+                                rsum = 0
+                                for s in manif.irange():
+                                    if ginv[i, s] == 0:
+                                        continue
+                                    
+                                    inv_expr = p_get_expr(ginv[i, s])
+                                    
+                                    # Vector derivation of ScalarFields
+                                    term_diff_sf = (frame[j](g_sf[(s, k)]) + 
+                                                    frame[k](g_sf[(j, s)]) - 
+                                                    frame[s](g_sf[(j, k)]))
+                                    term_diff_expr = p_get_expr(term_diff_sf)
+                                    
+                                    # Structure coefficient cross-terms
+                                    term_struct_expr = 0
+                                    for m in manif.irange():
+                                        term_struct_expr += (
+                                            - p_get_expr(gg[j, m]) * p_get_expr(c[m, i, k])
+                                            - p_get_expr(gg[k, m]) * p_get_expr(c[m, j, s])
+                                            + p_get_expr(gg[s, m]) * p_get_expr(c[m, j, k])
+                                        )
+                                        
+                                    rsum += inv_expr * (term_diff_expr + term_struct_expr)
+                                partial.append([i, j, k, rsum / 2])
+                            return partial
+
+                        for ii, val in make_Connect_Frame(listParalInput):
+                            for jj in val:
+                                gam[jj[0], jj[1], jj[2]] = jj[3]
 
                 else:
-                    # Computation from the formula defining the connection coef.
-                    return AffineConnection.coef(self, frame)
+                    # Sequential
+                    if is_coord:
+                        chart = frame._chart
+                        for ind in gam.non_redundant_index_generator():
+                            i, j, k = ind
+                            rsum = 0
+                            for s in manif.irange():
+                                if ginv[i, s, chart] != 0:
+                                    rsum += ginv[i, s, chart] * (
+                                        gg[s, k, chart].diff(j) + 
+                                        gg[j, s, chart].diff(k) - 
+                                        gg[j, k, chart].diff(s)
+                                    )
+                            gam[i, j, k, chart] = rsum / 2
+                    else:
+                        for ind in gam.non_redundant_index_generator():
+                            i, j, k = ind
+                            rsum = 0
+                            for s in manif.irange():
+                                if ginv[i, s] == 0:
+                                    continue
+                                    
+                                inv_expr = get_expr(ginv[i, s])
+                                
+                                term_diff_sf = (frame[j](g_sf[(s, k)]) + 
+                                                frame[k](g_sf[(j, s)]) - 
+                                                frame[s](g_sf[(j, k)]))
+                                term_diff_expr = get_expr(term_diff_sf)
+                                
+                                term_struct_expr = 0
+                                for m in manif.irange():
+                                    term_struct_expr += (
+                                        - get_expr(gg[j, m]) * get_expr(c[m, i, k])
+                                        - get_expr(gg[k, m]) * get_expr(c[m, j, s])
+                                        + get_expr(gg[s, m]) * get_expr(c[m, j, k])
+                                    )
+                                    
+                                rsum += inv_expr * (term_diff_expr + term_struct_expr)
+                                
+                            gam[i, j, k] = rsum / 2
+                self._coefficients[frame] = gam    
         return self._coefficients[frame]
 
     def torsion(self):
