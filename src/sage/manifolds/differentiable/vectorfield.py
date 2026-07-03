@@ -341,18 +341,11 @@ class VectorField(MultivectorField):
         if scalar._tensor_type != (0,0):
             raise TypeError("the argument must be a scalar field")
         
-        # AbstractFrameFunction calculation
-        if not hasattr(scalar, 'differential'):
-            return scalar.diff(self)
-        # AbstractFrameFunction calculation
-        if hasattr(scalar, '_express') and (not scalar._express or None in scalar._express):
+        if hasattr(scalar, '_express') and None in scalar._express:
             from sage.symbolic.ring import SR
             from sage.misc.latex import latex
             
-            # Extract raw expression natively via our updated scalar.expr()
-            expr_val = scalar.expr()
-            expr = SR(expr_val)
-            
+            expr = SR(scalar._express[None])
             if expr == 0:
                 resu = scalar._domain.manifold().scalar_field()
                 resu._express[None] = SR(0)
@@ -367,13 +360,21 @@ class VectorField(MultivectorField):
                 if p_diff != 0:
                     sym_name = f"{v_name}_{v}".replace("(", "_").replace(")", "").replace("^", "")
                     l_name = fr"{v_latex}\left({latex(v)}\right)"
+                    # e.g., e_1(x) is generated only for the base variables
                     result_expr += p_diff * SR.var(sym_name, latex_name=l_name)
                     
-            # Wrap the resulting symbolic math back into a clean, native ScalarField
             resu = scalar._domain.manifold().scalar_field()
             resu._express[None] = result_expr
             return resu
+
+        # AbstractFrameFunction calculation
+        if not hasattr(scalar, 'differential'):
+            return scalar.diff(self)
         
+        if hasattr(scalar, '_express') and not scalar._express:
+            if hasattr(scalar, 'coord_function'):
+                return scalar.coord_function.diff(self)
+
         resu = scalar.differential()(self)
         if not resu.is_immutable():
             if self._name is not None and scalar._name is not None:

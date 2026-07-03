@@ -1240,8 +1240,12 @@ class VectorFrame(FreeModuleBasis):
                         structure_coeff[[k,i,j]] = ce_k(e_j.lie_der(e_i))
                     except (ValueError, AttributeError):
                             sym_name = f"c_{k}{i}{j}"
-                            l_name = fr"c^{{{k}}}_{{{i}{j}}}"                        
-                            structure_coeff[[k,i,j]] = SR.var(sym_name, latex_name=l_name)
+                            l_name = fr"c^{{{k}}}_{{{i}{j}}}"
+                                                    
+                            sym = SR.var(sym_name, latex_name=l_name)
+                            sf = self._domain.manifold().scalar_field()
+                            sf._express[None] = sym
+                            structure_coeff[[k,i,j]] = sf
         return structure_coeff
 
     def along(self, mapping):

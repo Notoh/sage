@@ -612,8 +612,10 @@ class LeviCivitaConnection(AffineConnection):
                                     )
                                     
                                 rsum += inv_expr * (term_diff_expr + term_struct_expr)
-                                
-                            gam[i, j, k] = rsum / 2
+                            
+                            sf = manif.scalar_field()
+                            sf._express[None] = rsum / 2
+                            gam[i, j, k] = sf
                 self._coefficients[frame] = gam    
         return self._coefficients[frame]
 

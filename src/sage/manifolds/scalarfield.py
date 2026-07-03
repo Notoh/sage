@@ -1398,6 +1398,10 @@ class ScalarField(CommutativeAlgebraElement, ModuleElementWithMutability):
         if com_charts is None:
             raise ValueError("no common chart for the comparison")
         for chart in com_charts:
+            if chart is None:
+                if bool(self._express[None] != other._express[None]):
+                    return False
+                continue
             if not (self._express[chart] == other._express[chart]):
                 return False
         return True
@@ -1622,7 +1626,10 @@ class ScalarField(CommutativeAlgebraElement, ModuleElementWithMutability):
         """
         result = type(self)(self.parent(), name=name, latex_name=latex_name)
         for chart, funct in self._express.items():
-            result._express[chart] = funct.copy()
+            if chart is None:
+                result._express[chart] = funct
+            else:
+                result._express[chart] = funct.copy()
         result._is_zero = self._is_zero
         return result
 
@@ -1749,8 +1756,7 @@ class ScalarField(CommutativeAlgebraElement, ModuleElementWithMutability):
         from sage.symbolic.ring import SR
         from sage.misc.latex import latex
 
-        # Define the duck-typed Mock container for coordinate-free execution
-        class AbstractFrameFunction:
+        class AbstractFrameFunction: #TODO check if I still need this logic
             _tensor_type = (0, 0) 
 
             def __init__(self, expr, name=None):
@@ -1926,6 +1932,9 @@ class ScalarField(CommutativeAlgebraElement, ModuleElementWithMutability):
             sage: f.expr()  # note the SymPy exponent notation
             x*y**2
         """
+        if chart is None and None in self._express:
+            return self._express[None]
+
         return self.coord_function(chart, from_chart).expr()
 
     def set_expr(self, coord_expression, chart=None):
@@ -2232,6 +2241,9 @@ class ScalarField(CommutativeAlgebraElement, ModuleElementWithMutability):
             unicode_mathbbR,
             unicode_to,
         )
+
+        if chart is None and None in self._express:
+            return self._express[None]  
 
         def _display_expression(self, chart, result):
             r"""
