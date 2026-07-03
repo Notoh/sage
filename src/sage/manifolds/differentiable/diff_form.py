@@ -1440,6 +1440,20 @@ class DiffFormParal(FreeModuleAltForm, TensorFieldParal, DiffForm):
             sage: v = M.vector_field(-y, x, t, z, name='v')
             sage: a.lie_der(v) == v.contract(diff(a)) + diff(a(v)) # long time
             True
+        
+        Let us check the exterior derivative works correctly in an arbitrary frame::
+
+            sage: N = Manifold(3, 'N', start_index=1)
+            sage: X.<x,y,z> = N.chart()
+            sage: change_basis = M.automorphism_field()
+            sage: change_basis[X.frame(), :] = [[1, 0, 0], [0, 1, 0], [0, x, 1]]
+            sage: e = X.frame().new_frame(change_basis, 'e')
+            sage: omega = N.diff_form(1, 'omega')
+            sage: omega[e, :] = [y, z, x]
+            sage: diff(omega).display(e)
+            domega[e,0,1] == x
+            sage: diff(omega)[e,0, 1] == x
+            True
         """
         from sage.manifolds.differentiable.vectorframe import CoordFrame
         from sage.tensor.modules.comp import CompFullyAntiSym
@@ -1453,50 +1467,39 @@ class DiffFormParal(FreeModuleAltForm, TensorFieldParal, DiffForm):
         resu = fmodule.alternating_form(self._tensor_rank + 1,
                                         name=rname,
                                         latex_name=rlname)
-        # 1/ List of all coordinate frames in which the components of self
-        # are known
-        coord_frames = []
-        for frame in self._components:
-            if isinstance(frame, CoordFrame):
-                coord_frames.append(frame)
-        if not coord_frames:
-            # A coordinate frame is searched, at the price of a change of
-            # frame, privileging the frame of the domain's default chart
-            dom = self._domain
-            def_coordf = dom._def_chart._frame
-            for frame in self._components:
-                if (frame, def_coordf) in dom._frame_changes:
-                    self.comp(def_coordf, from_basis=frame)
-                    coord_frames = [def_coordf]
-                    break
-            if not coord_frames:
-                for chart in dom._atlas:
-                    if chart != dom._def_chart:
-                        # the case def_chart is
-                        # treated above
-                        coordf = chart._frame
-                        for frame in self._components:
-                            if (frame, coordf) in dom._frame_changes:
-                                self.comp(coordf, from_basis=frame)
-                                coord_frames[coordf]
-                                break
-                        if coord_frames:
-                            break
-        # 2/ The computation:
-        for frame in coord_frames:
-            chart = frame._chart
-            sc = self._components[frame]
+        # The computation is performed in each frame in which the components
+        # of ``self`` are already known. 
+        for frame, sc in self._components.items():
+            structure_coeff = frame.structure_coeff()
             dc = CompFullyAntiSym(fmodule._ring, frame,
                                   self._tensor_rank + 1,
                                   start_index=fmodule._sindex,
                                   output_formatter=fmodule._output_formatter)
+            
+            indices = list(fmodule.irange())
+
             for ind, val in sc._comp.items():
-                for i in fmodule.irange():
+                for i in indices:
                     ind_d = (i,) + ind
                     if len(ind_d) == len(set(ind_d)):
-                        # all indices are different
-                        dc[[ind_d]] += \
-                           val.coord_function(chart).diff(i).scalar_field()
+                        dc[[ind_d]] += frame[i](val)
+
+                if not isinstance(frame, CoordFrame):
+                    for pos, s in enumerate(indices):
+                        omitted = ind[:pos] + ind[pos + 1:]
+
+                        for idx_a, a in enumerate(indices):
+                            for b in indices[idx_a + 1:]:
+                                coeff = structure_coeff[[s, a, b]]
+                            
+                                if coeff != 0:
+                                    ind_d = (a, b) + omitted
+                                    if len(ind_d) == len(set(ind_d)):
+                                        term = -coeff * val
+                                        if pos % 2 == 1:
+                                            term = -term
+
+                                        dc[[ind_d]] += term
             resu._components[frame] = dc
         return resu
 
