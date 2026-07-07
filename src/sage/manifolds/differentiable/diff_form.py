@@ -773,6 +773,8 @@ class DiffForm(TensorField):
             nondegenerate_tensor = self._vmodule._ambient_domain.metric()
 
         p = self.tensor_type()[1]
+        if isinstance(nondegenerate_tensor, G2Structure):
+            p = 2
         # For performance reasons, we raise the indices of the volume form
         # and not of the differential form; in the symplectic case this is wrong by
         # a factor of (-1)^p, which will be corrected below
