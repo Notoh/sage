@@ -615,7 +615,7 @@ class LeviCivitaConnection(AffineConnection):
                             
                             sf = manif.scalar_field()
                             sf._express[None] = rsum / 2
-                            gam[i, j, k] = sf
+                            gam[i, j, k] = sf #TODO FIX PARALLELIZATION!
                 self._coefficients[frame] = gam    
         return self._coefficients[frame]
 

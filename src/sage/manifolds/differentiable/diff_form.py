@@ -56,6 +56,7 @@ if TYPE_CHECKING:
     from sage.manifolds.differentiable.metric import PseudoRiemannianMetric
     from sage.manifolds.differentiable.symplectic_form import SymplecticForm
     from sage.manifolds.differentiable.vectorfield_module import VectorFieldModule
+    from sage.manifolds.differentiable.g2_structure import G2Structure
 
 
 class DiffForm(TensorField):
@@ -608,7 +609,7 @@ class DiffForm(TensorField):
     def hodge_dual(
         self,
         nondegenerate_tensor: Union[
-            PseudoRiemannianMetric, SymplecticForm, None
+            PseudoRiemannianMetric, SymplecticForm, G2Structure, None
         ] = None,
         minus_eigenvalues_convention: bool = False,
     ) -> DiffForm:

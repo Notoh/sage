@@ -459,6 +459,7 @@ class CoFrame(FreeModuleCoBasis):
 
 
 class VectorFrame(FreeModuleBasis):
+    # TODO add in indexing that remembers if this frame is ON wrt a metric and if so do computations with it
     r"""
     Vector frame on a differentiable manifold.
 

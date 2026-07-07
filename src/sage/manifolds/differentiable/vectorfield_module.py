@@ -1194,6 +1194,13 @@ class VectorFieldModule(UniqueRepresentation, ReflexiveModule_base):
         return PseudoRiemannianMetric(self, name, signature=signature[0]-signature[1],
                                       latex_name=latex_name)
 
+    def g2_structure(
+        self, name: Optional[str] = None, latex_name: Optional[str] = None
+    ):
+        from sage.manifolds.differentiable.g2_structure import G2Structure
+
+        return G2Structure(self, name, latex_name)
+
     def symplectic_form(
         self, name: Optional[str] = None, latex_name: Optional[str] = None
     ):
@@ -2386,6 +2393,13 @@ class VectorFieldFreeModule(FiniteRankFreeModule):
         return PseudoRiemannianMetricParal(self, name,
                                            signature=signature[0]-signature[1],
                                            latex_name=latex_name)
+    def g2_structure(
+        self, name: Optional[str] = None, latex_name: Optional[str] = None
+    ):
+        from sage.manifolds.differentiable.g2_structure import G2StructureParal
+
+        return G2StructureParal(self, name, latex_name)
+
 
     def symplectic_form(
         self, name: Optional[str] = None, latex_name: Optional[str] = None
